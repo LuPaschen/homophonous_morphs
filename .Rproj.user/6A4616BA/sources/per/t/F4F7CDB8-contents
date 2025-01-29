@@ -1,0 +1,361 @@
+
+
+### for internal testing:
+# create a version of the homophone_data table that includes only those homophones in the final models
+results_morph_purity_2 <- results_morph_purity %>%
+  rename(mb_raw = morph) %>%
+  select(lang, mb_raw)
+homophone_data_only_morphs_in_model <- homophone_data %>%
+  inner_join(results_morph_purity_2, by=c("lang","mb_raw"))
+# create a version of the results_morph_purity table that adds info and gl
+homophone_data_reduced_to_important_columns <- homophone_data_only_morphs_in_model %>%
+  select(lang, mb_raw, mb, gl) %>%
+  unique()
+write.csv(homophone_data_reduced_to_important_columns, "only_morphs_in_final_model.csv")
+
+
+
+
+### xx) Testing the normal model with segmental_context (combining left and right context)
+factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "speaker", "wd_freq", "segmental_context")
+predictor <- "mb_duration"
+results_all_purity_test <- data.frame(lang = character(), morph = character(), factor = character(), contribution = numeric(), r_sq = numeric())
+
+
+# Loop to run Random Forests for each homophone set, per language
+set.seed(44)
+for(l in languages) {
+  
+  morphs_raw <- unique(homophone_data$mb_raw[homophone_data$lang == l])
+  for(m in morphs_raw) {
+    print(paste(l,m)) # debugging
+    data_subset <- homophone_data %>% filter(lang == l, mb_raw == m) %>% select(c(all_of(factors)), all_of(predictor))
+    if(nrow(data_subset) > 0){
+      
+      # Run model
+      rf <- randomForest(mb_duration ~ ., ntree = 500, mtry = 3, data = data_subset, importance = TRUE)
+      
+      # Model statistics
+      r_sq = max(rf$rsq)
+      contributions_purity <- rf$importance[, "IncNodePurity"] / sum(rf$importance[, "IncNodePurity"])
+      for (f in factors) {
+        results_all_purity_test <- rbind(results_all_purity_test, data.frame(lang = l, morph = m, factor = f, contribution = contributions_purity[[f]], r_sq = r_sq))
+        
+      }
+    }
+  }
+}
+
+# Rename columns for better readability
+results_all_purity_test <- results_all_purity_test %>%
+  mutate(factor = case_when(
+    factor == "gl"  ~ "morph",
+    factor == "position_in_ipu" ~ "position",
+    factor == "wd_freq" ~ "word_frequency",
+    factor == "wd_size" ~ "word_size",
+    TRUE ~ factor
+  ))
+
+# Remove models below a 25% performance threshold
+results_all_purity_test_unfiltered <- results_all_purity_test
+results_all_purity_test <- filter(results_all_purity_test_unfiltered, r_sq > 0.2)
+
+# Subsets and re-organized dataframes for sub-studies
+results_morph_purity_test <- results_all_purity_test %>%
+  filter(factor == "morph")
+s_data_test <- results_all_purity_test %>%
+  mutate(s = ifelse(str_detect(morph, "s|z"), "with_alveolar_sibilant", "no_alveolar_sibilant"),
+         source = "Alveolar sibilant")  %>%
+  filter(factor == "morph") 
+remember_homogeneity <- homophone_data %>% select(lang, mb_raw, homogeneity_mt) %>% distinct() %>% rename(morph = mb_raw)
+mt_data_test <- left_join(results_all_purity_test, remember_homogeneity, by = c("lang", "morph")) %>% 
+  filter(factor == "morph") %>% 
+  mutate(source = "Homogeneity")
+proportion_homo <- mean(mt_data_test$homogeneity_mt == "Homogeneous")
+proportion_s_test <- mean(s_data_test$s == "with_alveolar_sibilant")
+
+# Figure: Factor x Contribution (over all languages)
+contr_factor_test <- ggplot(results_all_purity_test, aes(x = reorder(factor, contribution, FUN = mean), y = contribution)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, color = "purple", size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25, color = "purple") +
+  #  geom_hline(yintercept = 0.142, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0, 0.4)) +
+  labs(x = "Factor", y = "Importance") +
+  theme(text = element_text(size = 32))
+ggsave(filename = "img/test_contr_factor_37_44.png", plot = contr_factor_test, width = 10, height = 8, units = "in", dpi = 300)
+
+# Figure: Language x Contribution of morph
+contrmorph_language_test <- ggplot(results_morph_purity_test, aes(x = reorder(lang, contribution, FUN = mean), y = contribution)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, color = "purple", size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25, color = "purple") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0, 0.3)) +
+  labs(x = "Language", y = "Importance of morph") +
+  theme(text = element_text(size = 32))
+ggsave(filename = "img/test_contrmorph_language_37_44.png", plot = contrmorph_language_test, width = 10, height = 12, units = "in", dpi = 300)
+
+# Figure: Crowdedness
+homophone_count <- homophone_data %>% select(lang, mb_raw, n_homophones) %>% distinct() %>% rename(morph = mb_raw)
+homophone_data_with_counts_test <- merge(results_morph_purity_test, homophone_count, by = c("lang", "morph"))
+crowdedness_contrmorph_test <- ggplot(data= homophone_data_with_counts_test, aes(x = n_homophones, y = contribution)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "purple", linewidth = 3) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.175)) +
+  labs(x = "Crowdedness", y = "Importance of morph") +
+  xlim(2,6) +
+  theme(text = element_text(size = 32))
+ggsave(filename = "img/test_crowdedness_contrmorph_37_44.png", plot = crowdedness_contrmorph_test, width = 10, height = 10, units = "in", dpi = 300)
+r_crowdedness_test <- cor(homophone_data_with_counts_test$contribution, homophone_data_with_counts_test$n_h)
+model_test <- lm(contribution ~ n_homophones, data = homophone_data_with_counts_test)
+p_crowdedness_test <- summary(model_test)$coefficients[2, 4]
+
+# Figure: Morphs containing "s" or "z"
+contr_fact_s_test <- ggplot(s_data_test, aes(x = reorder(factor, contribution, FUN = mean), y = contribution, color = s)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  scale_color_manual(values = c("purple", "orange"))  +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0.05, 0.15)) +
+  theme_minimal() +
+  labs(x = "Factor", y = "Importance") +
+  theme(text = element_text(size = 32))
+ggsave(filename = "img/test_contr_factor_s_37_44.png", plot = contr_fact_s_test, width = 12, height = 4, units = "in", dpi = 300)
+
+# Figure: Homogeneity
+contr_fact_mt_test <- ggplot(mt_data_test, aes(x = reorder(factor, contribution, FUN = mean), y = contribution, color = homogeneity_mt)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  scale_color_manual(values = c("purple", "orange"))  +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0.05, 0.15)) +
+  theme_minimal() +
+  labs(x = "Factor", y = "Importance") +
+  theme(text = element_text(size = 32))
+ggsave(filename = "img/test_contr_factor_mt_37_44.png", plot = contr_fact_mt_test, width = 12, height = 4, units = "in", dpi = 300)
+
+top_20_test <- results_morph_purity_test %>%
+  arrange(desc(contribution)) %>%
+  slice_head(n = 20)
+
+top_30_test <- results_morph_purity_test %>%
+  arrange(desc(contribution)) %>%
+  slice_head(n = 30)
+
+## The result is a higher importance for segmental_context (probably due to over-fitting)
+## Problem: with this model, Gubeeher "d" completely disappears from the top 20, and Texistepec Popoluca "wää" is removed due to the 25% model performance
+## A possible fix would be to lower the threshold to 20%, but then the "d" morph from Gubeeher would still be missing
+
+
+### kk) Testing the normal model with segmental_context simplified to include voicing and boundaries only
+### With segmental_context_r only: segmental_context_r is lower than morph
+### With segmental_context (combination of r and l): segmental_context_r is slightly higher than morph !!!!!! VERY GOOD
+
+# New: Sound classes
+vowels = c("i","y","1","}","M","u","I","Y","U","e","2","@","8","7","o","E","9","3","V","O","{","6","a","&","A","Q")
+voiced_consonants = c("m","F","n","J","N","b","d","g","G","B","v","D","z","Z","j","R","r","4","l","5","L","w")
+voiceless_consonants = c("p","t","c","k","q",">","?","f","T","s","S","C","x","X","H","h","K","|","!","=")
+
+# Need to create a special homophone_data object
+homophone_data_2 <- doreco_data_gloss_equivalence_applied %>%
+  # Segmental context: Convert to general categories
+  mutate(segmental_context_r = case_when(
+    segmental_context_r == "#" ~ "#",
+    substr(segmental_context_r, 1, 1) %in% voiced_consonants ~ "D",
+    substr(segmental_context_r, 1, 1) %in% voiceless_consonants ~ "T",
+    substr(segmental_context_r, 1, 1) %in% vowels ~ "V",
+    TRUE ~ NA
+  ),
+  segmental_context_l = case_when(
+    segmental_context_l == "#" ~ "initial",
+    TRUE ~ "non-initial"
+  ),
+  segmental_context = paste(segmental_context_l, segmental_context_r, sep = "__")
+  ) %>%
+  # Remove pauses
+  filter(!grepl("<p:>", wd)) %>%
+  # Word frequency
+  group_by(lang, wd) %>%
+  mutate(word_and_glosses = paste(wd, paste(unique(gl), collapse = " "), sep = " ")) %>%   
+  group_by(lang, word_and_glosses) %>%
+  mutate(wd_freq = n_distinct(wd_ID)) %>%
+  # Remove labeled content
+  filter(!grepl("^<<", wd)) %>%
+  # Remove morphs and glosses with filler content
+  filter(mb != "****", gl != "****", gl != "NC", gl != "nc") %>%
+  # Remove rows containing NAs (may arise with monomorphemic IPU's)
+  filter(!is.na(speech_rate)) %>%
+  # Remove morph/gloss pairs with fewer than 10 occurrences
+  group_by(lang, mb_raw, gl) %>%
+  mutate(mb_freq = n_distinct(mb_ID)) %>%
+  filter(mb_freq >= 10) %>%
+  # Exclude glosses that group together various unrelated meanings
+  filter(!(lang == "savo1255" & (gl %in% c("DET.SG.M/DET.PL", "stand/INGR")))) %>%
+  filter(!(lang == "ruul1235" & (gl %in% c("1-")))) %>%
+  filter(!(lang == "sanz1248" & (gl %in% c("-PL")))) %>%
+  filter(!(lang == "nort2641" & (gl %in% c("ADP", "POP")))) %>%
+  # Determine homogeneity in morph types
+  group_by(lang, mb_raw) %>%
+  mutate(homogeneity_mt = if_else(n_distinct(mt) == 1, "Homogeneous", "Heterogeneous")) %>%
+  # Remove morphs with only one distinct gloss
+  mutate(n_homophones = n_distinct(gl)) %>%
+  filter(n_homophones > 1) %>%
+  # Restructure dataframe to one row = one morph
+  group_by(lang, mb_ID) %>%
+  filter(ph_ID == last(ph_ID)) %>%
+  ungroup()
+
+glottocodes <- c("anal1239", "apah1238", "arap1274", "bain1259", "beja1238", "bora1263", "cabe1245", "cash1254", "dolg1241", "even1259", "goem1240", "goro1270", "hoch1243", "jeha1242", "jeju1234", "kaka1265", "kama1351", "kark1256", "komn1238", "ligh1234", "lowe1385", "movi1243", "ngal1292", "nisv1234", "nngg1234", "nort2641", "nort2875", "orko1234", "pnar1238", "port1286", "resi1247", "ruul1235", "sadu1234", "sanz1248", "savo1255", "sout2856", "sout3282", "stan1290", "sumi1235", "svan1243", "taba1259", "teop1238", "texi1237", "trin1278", "tsim1256", "urum1249", "vera1241", "warl1254", "yong1270", "yuca1254", "yura1255", "toto1304", "guri1247")
+language_names <- c("Anal", "Yali", "Arapaho", "Baïnounk Gubëeher", "Beja", "Bora", "Cabécar", "Cashinahua", "Dolgan", "Evenki", "Goemai", "Gorwaa", "Hoocąk", "Jahai", "Jejuan", "Kakabe", "Kamas", "Tabaq", "Komnzo", "Light Warlpiri", "Lower Sorbian", "Movima", "Dalabon", "Nisvai", "Nǁng", "Northern Kurdish (Kurmanji)", "Northern Alta", "Fanbyak", "Pnar", "Daakie", "Resígaro", "Ruuli", "Sadu", "Sanzhi Dargwa", "Savosavo", "Nafsan (South Efate)", "English (Southern England)", "French (Swiss)", "Sümi", "Svan", "Tabasaran", "Teop", "Texistepec Popoluca", "Mojeño Trinitario", "Asimjeeg Datooga", "Urum", "Vera'a", "Warlpiri", "Yongning Na", "Yucatec Maya", "Yurakaré", "Totoli", "Gurindji")
+mapping_vector <- setNames(language_names, glottocodes)
+homophone_data_2$lang <- mapping_vector[homophone_data_2$lang]
+languages <- unique(homophone_data_2$lang)
+
+factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "speaker", "wd_freq", "segmental_context")
+predictor <- "mb_duration"
+results_all_purity_test <- data.frame(lang = character(), morph = character(), factor = character(), contribution = numeric(), r_sq = numeric())
+
+# Loop to run Random Forests for each homophone set, per language
+set.seed(44)
+for(l in languages) {
+  
+  morphs_raw <- unique(homophone_data_2$mb_raw[homophone_data_2$lang == l])
+  for(m in morphs_raw) {
+    print(paste(l,m)) # debugging
+    data_subset <- homophone_data_2 %>% filter(lang == l, mb_raw == m) %>% select(c(all_of(factors)), all_of(predictor))
+    if(nrow(data_subset) > 0){
+      
+      # Run model
+      rf <- randomForest(mb_duration ~ ., ntree = 500, mtry = 3, data = data_subset, importance = TRUE)
+      
+      # Model statistics
+      r_sq = max(rf$rsq)
+      contributions_purity <- rf$importance[, "IncNodePurity"] / sum(rf$importance[, "IncNodePurity"])
+      for (f in factors) {
+        results_all_purity_test <- rbind(results_all_purity_test, data.frame(lang = l, morph = m, factor = f, contribution = contributions_purity[[f]], r_sq = r_sq))
+        
+      }
+    }
+  }
+}
+
+# Rename columns for better readability
+results_all_purity_test <- results_all_purity_test %>%
+  mutate(factor = case_when(
+    factor == "gl"  ~ "morph",
+    factor == "position_in_ipu" ~ "position",
+    factor == "wd_freq" ~ "word_frequency",
+    factor == "wd_size" ~ "word_size",
+    TRUE ~ factor
+  ))
+
+# Remove models below a 25% performance threshold
+results_all_purity_test_unfiltered <- results_all_purity_test
+results_all_purity_test <- filter(results_all_purity_test_unfiltered, r_sq > 0.2)
+
+# Subsets and re-organized dataframes for sub-studies
+results_morph_purity_test <- results_all_purity_test %>%
+  filter(factor == "morph")
+s_data_test <- results_all_purity_test %>%
+  mutate(s = ifelse(str_detect(morph, "s|z"), "with_alveolar_sibilant", "no_alveolar_sibilant"),
+         source = "Alveolar sibilant")  %>%
+  filter(factor == "morph") 
+remember_homogeneity <- homophone_data %>% select(lang, mb_raw, homogeneity_mt) %>% distinct() %>% rename(morph = mb_raw)
+mt_data_test <- left_join(results_all_purity_test, remember_homogeneity, by = c("lang", "morph")) %>% 
+  filter(factor == "morph") %>% 
+  mutate(source = "Homogeneity")
+proportion_homo <- mean(mt_data_test$homogeneity_mt == "Homogeneous")
+proportion_s_test <- mean(s_data_test$s == "with_alveolar_sibilant")
+
+# Figure: Factor x Contribution (over all languages)
+contr_factor_test <- ggplot(results_all_purity_test, aes(x = reorder(factor, contribution, FUN = mean), y = contribution)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, color = "purple", size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25, color = "purple") +
+  #  geom_hline(yintercept = 0.142, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0, 0.4)) +
+  labs(x = "Factor", y = "Importance") +
+  theme(text = element_text(size = 32))
+#ggsave(filename = "img/test_contr_factor_37_44.png", plot = contr_factor_test, width = 10, height = 8, units = "in", dpi = 300)
+
+top_20_test <- results_morph_purity_test %>%
+  arrange(desc(contribution)) %>%
+  slice_head(n = 20)
+
+# Figure: Language x Contribution of morph
+contrmorph_language_test <- ggplot(results_morph_purity_test, aes(x = reorder(lang, contribution, FUN = mean), y = contribution)) +
+  stat_summary(fun = mean, geom = "point", shape = 18, color = "purple", size = 9) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25, color = "purple") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip(ylim = c(0, 0.3)) +
+  labs(x = "Language", y = "Importance of morph") +
+  theme(text = element_text(size = 32))
+#ggsave(filename = "img/test_contrmorph_language_37_44.png", plot = contrmorph_language_test, width = 10, height = 12, units = "in", dpi = 300)
+
+# Figure: Crowdedness
+homophone_count <- homophone_data_2 %>% select(lang, mb_raw, n_homophones) %>% distinct() %>% rename(morph = mb_raw)
+homophone_data_with_counts_test <- merge(results_morph_purity_test, homophone_count, by = c("lang", "morph"))
+crowdedness_contrmorph_test <- ggplot(data= homophone_data_with_counts_test, aes(x = n_homophones, y = contribution)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "purple", linewidth = 3) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.175)) +
+  labs(x = "Crowdedness", y = "Importance of morph") +
+  xlim(2,6) +
+  theme(text = element_text(size = 32))
+r_crowdedness_test <- cor(homophone_data_with_counts_test$contribution, homophone_data_with_counts_test$n_h)
+model_test <- lm(contribution ~ n_homophones, data = homophone_data_with_counts_test)
+
+
+
+
+
+
+### yy) in addition, word_type instead of word_frequency (following Strunk et al.)
+factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "speaker", "wd", "segmental_context")
+predictor <- "mb_duration"
+results_all_purity_test2 <- data.frame(lang = character(), morph = character(), factor = character(), contribution = numeric(), r_sq = numeric())
+
+
+# Loop to run Random Forests for each homophone set, per language
+set.seed(44)
+for(l in languages) {
+  
+  morphs_raw <- unique(homophone_data$mb_raw[homophone_data$lang == l])
+  for(m in morphs_raw) {
+    print(paste(l,m)) # debugging
+    data_subset <- homophone_data %>% filter(lang == l, mb_raw == m) %>% select(c(all_of(factors)), all_of(predictor))
+    if(nrow(data_subset) > 0){
+      
+      # Run model
+      rf <- randomForest(mb_duration ~ ., ntree = 500, mtry = 3, data = data_subset, importance = TRUE)
+      
+      # Model statistics
+      r_sq = max(rf$rsq)
+      contributions_purity <- rf$importance[, "IncNodePurity"] / sum(rf$importance[, "IncNodePurity"])
+      for (f in factors) {
+        results_all_purity_test2 <- rbind(results_all_purity_test2, data.frame(lang = l, morph = m, factor = f, contribution = contributions_purity[[f]], r_sq = r_sq))
+        
+      }
+    }
+  }
+}
+
+# Rename columns for better readability
+results_all_purity_test2 <- results_all_purity_test2 %>%
+  mutate(factor = case_when(
+    factor == "gl"  ~ "morph",
+    factor == "position_in_ipu" ~ "position",
+    factor == "wd" ~ "word_type",
+    factor == "wd_size" ~ "word_size",
+    TRUE ~ factor
+  ))
+
+# Remove models below a 25% performance threshold
+results_all_purity_test2_unfiltered <- results_all_purity_test2
+results_all_purity_test2 <- filter(results_all_purity_test2_unfiltered, r_sq > 0.25)
+
+## result: higher score for wd_type than for wd_freq, probably due to over-fitting
