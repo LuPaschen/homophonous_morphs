@@ -121,7 +121,7 @@ homophone_data <- doreco_data_gloss_equivalence_applied %>%
   # Remove pauses
   filter(!grepl("<p:>", wd)) %>%
   # Word frequency
-  group_by(lang, wd) %>%
+  group_by(lang, wd_ID) %>%
   mutate(word_and_glosses = paste(wd, paste(unique(gl), collapse = " "), sep = " ")) %>%   
   group_by(lang, word_and_glosses) %>%
   mutate(wd_freq = n_distinct(wd_ID)) %>%
@@ -153,7 +153,6 @@ homophone_data <- doreco_data_gloss_equivalence_applied %>%
 
 
 
-
 ### 5) Replace glottocodes with human-readable language names
 glottocodes <- c("anal1239", "apah1238", "arap1274", "bain1259", "beja1238", "bora1263", "cabe1245", "cash1254", "dolg1241", "even1259", "goem1240", "goro1270", "hoch1243", "jeha1242", "jeju1234", "kaka1265", "kama1351", "kark1256", "komn1238", "ligh1234", "lowe1385", "movi1243", "ngal1292", "nisv1234", "nngg1234", "nort2641", "nort2875", "orko1234", "pnar1238", "port1286", "resi1247", "ruul1235", "sadu1234", "sanz1248", "savo1255", "sout2856", "sout3282", "stan1290", "sumi1235", "svan1243", "taba1259", "teop1238", "texi1237", "trin1278", "tsim1256", "urum1249", "vera1241", "warl1254", "yong1270", "yuca1254", "yura1255", "toto1304", "guri1247")
 language_names <- c("Anal", "Yali", "Arapaho", "Baïnounk Gubëeher", "Beja", "Bora", "Cabécar", "Cashinahua", "Dolgan", "Evenki", "Goemai", "Gorwaa", "Hoocąk", "Jahai", "Jejuan", "Kakabe", "Kamas", "Tabaq", "Komnzo", "Light Warlpiri", "Lower Sorbian", "Movima", "Dalabon", "Nisvai", "Nǁng", "Northern Kurdish (Kurmanji)", "Northern Alta", "Fanbyak", "Pnar", "Daakie", "Resígaro", "Ruuli", "Sadu", "Sanzhi Dargwa", "Savosavo", "Nafsan (South Efate)", "English (Southern England)", "French (Swiss)", "Sümi", "Svan", "Tabasaran", "Teop", "Texistepec Popoluca", "Mojeño Trinitario", "Asimjeeg Datooga", "Urum", "Vera'a", "Warlpiri", "Yongning Na", "Yucatec Maya", "Yurakaré", "Totoli", "Gurindji")
@@ -164,36 +163,4 @@ homophone_data$lang <- mapping_vector[homophone_data$lang]
 
 ### 6) Save object
 save.image(here("01_Preprocessing.RData"))
-
-
-Comments from R3:
-
-for main text:
-  
-  Methods and Results sections (including Table 2) need to specify the number of tokens that were included in each analysis. The number of speakers per dataset also needs to be provided (e.g., in Table 1).
-
-
-for appendix:
-  
-1) The ‘segmental_context’ measure only takes into account the following segment, so it can only tell us if the morph is word-final or word-medial but not if it’s word-initial. If there are enough tokens, I would suggest splitting the measure into preceding vs. following context. 
-  response: See comment by other reviewer too. I can justify the following segment due to the well-known regressive voicing effect. But I could justify looking to the left bc of the NatHumBehav paper. So I should try adding initial context (which will likely be very low)
-  -- added in pipeline "segmental_context_l"
-2) Acoustic differences between prefixes and suffixes are noted in the paper (p. 6) and the effects of stress that’s more likely to affect roots are also mentioned in the Discussion but morph type (prefix, proclitic, free root, bound root, suffix, etc.) isn’t taken into account in the statistical analyses. It would be interesting to know what happens when such a variable is added to the models (assuming there are enough tokens for this).
-  -- see response to your last comment.
-
-3) The ‘speaker’ measure is problematic (as noted on p. 14, lines 1-10), so what happens if it’s removed from the models and only group-level patterns are examined?
-  -- I should run an extra ("minimal") model speaker is excluded
-
-4) Another way of looking at the data would be to flip the models so that they predict ‘morph’ from duration.
-  -- I can probably do that and run a "flipped" model.
-
-5) Could differences in dataset size help explain the differences in the importance of the ‘morph’ variable (and  other variables) across languages?
-  -- I should make a graph combining the contr_lang figure and the token count variable ("n_words_per_lang")
-
-6) Are there enough tokens to add ‘crowdedness’, ‘presence of an alveolar fricative’ and ‘homogeneity’ to the initial random forest analysis? These measures seem relevant for the entire dataset, not just a subset.
- -- I should run an extra ("maximal") model where all of these are added as factors, including segmental_context_l and add it to an Appendix.
-
-
-
-
 

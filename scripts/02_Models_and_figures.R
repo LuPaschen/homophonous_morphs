@@ -157,17 +157,17 @@ n_words_total <- sum(n_words_per_lang$word_tokens)
 n_homophonesets_per_lang <- results_all_purity %>% group_by(lang) %>% summarize(homophone_sets = n_distinct(morph))
 n_homophonesets_total <- sum(n_homophonesets_per_lang$homophone_sets)
 n_speakers <- homophone_data %>% group_by(lang) %>% summarize(speakers = n_distinct(speaker))
-n_speakers_total <- sum(speakers$speakers)
+n_speakers_total <- sum(n_speakers$speakers)
 
 # Crowdedness: Number of homophone sets with n members
 crowdedness_table <- table(homophone_data_with_counts$n_homophones)
 
-# Identify the top 20 homophone sets in terms of morph variable importance
-top_20 <- results_morph_purity %>%
+# Identify the top 25 homophone sets in terms of morph variable importance
+top_25 <- results_morph_purity %>%
   arrange(desc(contribution)) %>%
-  slice_head(n = 20)
+  slice_head(n = 25)
 # Add number of tokens and unique glosses
-top_20_with_glosses <- homophone_data %>%
+top_25_with_glosses <- homophone_data %>%
   select(lang, mb_raw, gl) %>%
   rename(morph = mb_raw) %>%
   group_by(lang, morph) %>%
@@ -176,9 +176,9 @@ top_20_with_glosses <- homophone_data %>%
   group_by(lang, morph, number_of_morphs) %>%
   summarize(gls = paste(unique(gl), collapse = ", "), .groups = "drop") %>%
   mutate(number_of_gls = 1+(str_count(gls, ","))) %>%
-  right_join(top_20, by = c("lang", "morph"))
+  right_join(top_25, by = c("lang", "morph"))
 # Add mean morph durations
-unique_combinations <- top_20 %>%
+unique_combinations <- top_25 %>%
   select(lang, morph) %>%
   distinct()
 mean_durations <- homophone_data %>%
@@ -188,7 +188,7 @@ mean_durations <- homophone_data %>%
     mb = first(mb),
     .groups = 'drop') %>%
   rename(morph = mb_raw)
-top_20_with_means <- unique_combinations %>%
+top_25_with_means <- unique_combinations %>%
   left_join(mean_durations, by = c("lang", "morph"))
 
 # Identify smallest/ largest homophone sets
@@ -211,6 +211,7 @@ average_hom_set <- mean(hom_set_counts$count)
 # Reduplication
 reduplication_data_unfiltered <- homophone_data %>% filter(str_detect(mb, "~")) %>% distinct(lang, mb) %>% mutate(morph = str_replace_all(mb, "~", ""))
 reduplication_data_filtered <- reduplication_data_unfiltered %>% semi_join(results_all_purity, by = c("lang", "morph"))
+
 
 
 ### 10) Map

@@ -150,7 +150,7 @@ ggsave(filename = "img/appendix_contr_factor_min_37_44.png", plot = contr_factor
 ### 14) Model with maximum information on segmental context, separating variables for left and right context and using actual segments rather than segment groups
 
 # Factors for the Random Forest models
-factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "wd_freq", "segmental_context_raw_r", "segmental_context_raw_l")
+factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "speaker", "wd_freq", "segmental_context_raw_r", "segmental_context_raw_l")
 predictor <- "mb_duration"
 results_all_purity_max <- data.frame(lang = character(), morph = character(), factor = character(), contribution = numeric(), r_sq = numeric())
 
@@ -210,7 +210,7 @@ ggsave(filename = "img/appendix_contr_factor_max_37_44.png", plot = contr_factor
 ### 15) Model with morph_type as an additional factor
 
 # Factors for the Random Forest models
-factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "wd_freq", "segmental_context", "mt")
+factors <- c("gl", "position_in_ipu", "wd_size", "speech_rate", "speaker", "wd_freq", "segmental_context", "mt")
 predictor <- "mb_duration"
 results_all_purity_mt <- data.frame(lang = character(), morph = character(), factor = character(), contribution = numeric(), r_sq = numeric())
 
