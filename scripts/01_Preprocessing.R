@@ -72,7 +72,7 @@ doreco_data_preprocessed <- doreco_csv_data %>%
            endsWith(mb, "=") ~ "proclitic",
            is.na(mb) ~ NA,
            TRUE ~ "root")) %>%
-  # Word duration, word size (and word-initial position - not needed)
+  # Word duration, word size
   group_by(lang, wd_ID) %>%
   mutate(wd_duration = last(end) - first(start),
          wd_size_raw = n(),
