@@ -1,4 +1,5 @@
 *.RData
+.Rproj.user/
 only_morphs_in_final_model.csv
 data/ph_csv/
 data/wd_csv/
