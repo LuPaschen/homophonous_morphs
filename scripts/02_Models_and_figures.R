@@ -1,4 +1,4 @@
-# Script 2/3 for Author (202x): Acoustic disambiguation of homophones is exceptional. Submitted to Journal of Linguistics.
+# Script 2/3 for Paschen (2025): Acoustic disambiguation of homophones is exceptional. Journal of Linguistics. https://doi.org/10.1017/S0022226725100777
 
 ### 0) Load libraries
 library(tidyverse)
